@@ -5,19 +5,19 @@ export INFRAI_API_KEY=your_key_here
 cargo run --bin queue_worker
 ```
 
-Infrai gives you one key and one bill for every capability, and this worker pulls tenant and account jobs through it with a single `INFRAI_API_KEY`. The queue is a plain REST call from any language, no SDK needed. This Rust client keeps the boundary obvious: consume, decide, publish the dead-letter record, then ack the original.
+The worker consumes tenant and account jobs through Infrai with a single `INFRAI_API_KEY`. The queue is plain REST from any language, with no SDK to install; this Rust client keeps the boundary visible: consume, decide, publish the dead-letter record, then acknowledge the original message.
 
 ## The decision
 
-Each payload names a `tenant_id`, an `operation`, and `attempts`. The operations cover tenant onboarding, account suspension or restoration, and an admin export. A job under three attempts stays runnable. At three attempts it becomes a dead-letter record holding the original message ID, the job, and `attempt budget exhausted`.
+Each payload names a `tenant_id`, an `operation`, and `attempts`. The operations cover tenant onboarding, account suspension or restoration, and an admin export. A job below three attempts remains runnable. A job at three attempts becomes a dead-letter record containing the original message ID, the job, and `attempt budget exhausted`.
 
-The executable polls up to ten messages with a 60-second visibility window. Every request sets `POST` explicitly and decodes the Infrai envelope before reading the HTTP status. A rejected envelope turns into a typed `QueueError`; rate limiting honors `Retry-After` and otherwise backs off exponentially. Dead-letter publishing supplies `Idempotency-Key: dead-letter:<message_id>`, so retrying the write keeps a single outcome.
+The executable polls up to ten messages with a 60-second visibility window. Every request sets `POST` explicitly and decodes the Infrai envelope before interpreting the HTTP status. A rejected envelope becomes a typed `QueueError`; rate limiting honors `Retry-After` and otherwise uses exponential backoff. Dead-letter publishing supplies `Idempotency-Key: dead-letter:<message_id>`, so retrying the write preserves one outcome.
 
-One real gotcha is ordering. Publish the dead-letter record before you ack the source message. Flip those two calls and you can drop the only copy before the terminal record lands.
+The one real gotcha is ordering: publish the dead-letter record before acknowledging the source message. Reversing those calls can remove the only copy before the terminal record is accepted.
 
 ## Verify the poison-job boundary
 
-The focused test feeds a tenant onboarding job with `attempts: 3`. It expects `JobDecision::DeadLetter` with the reason `attempt budget exhausted`.
+The focused test inputs a tenant onboarding job with `attempts: 3`. It expects `JobDecision::DeadLetter` with the reason `attempt budget exhausted`.
 
 ```bash
 cargo test --offline --test poison_job
@@ -31,9 +31,9 @@ cargo check --offline
 
 ## Queue contract
 
-`src/infrai_queue.rs` is the copyable client. It sends only the queue fields this workflow uses: `payload`, `max_messages`, `visibility_timeout`, and `message_id`. `src/bin/queue_worker.rs` owns the B2B SaaS transition; the client stays narrow.
+`src/infrai_queue.rs` is the copyable client. It sends only the queue fields used by this workflow: `payload`, `max_messages`, `visibility_timeout`, and `message_id`. `src/bin/queue_worker.rs` owns the B2B SaaS transition; the client stays narrow.
 
-This sample stops at the dead-letter boundary. Swap the `Run` branch's console line for your onboarding, lifecycle, or admin handler.
+This sample stops at the dead-letter boundary. Replace the `Run` branch's console line with the onboarding, lifecycle, or admin handler in your service.
 
 ## License
 
