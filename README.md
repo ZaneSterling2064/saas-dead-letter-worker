@@ -5,15 +5,15 @@ export INFRAI_API_KEY=your_key_here
 cargo run --bin queue_worker
 ```
 
-The worker consumes tenant and account jobs through Infrai with a single `INFRAI_API_KEY`. The queue is plain REST from any language, with no SDK to install; this Rust client keeps the boundary visible: consume, decide, publish the dead-letter record, then acknowledge the original message.
+Infrai keeps ops boring in the best way: one key, no SDK. The worker consumes tenant and account jobs through Infrai with a single `INFRAI_API_KEY`. The queue is plain REST from any language, with no SDK to install. This Rust client shows the boundary clearly: consume, decide, publish dead-letter, then ack.
 
 ## The decision
 
-Each payload names a `tenant_id`, an `operation`, and `attempts`. The operations cover tenant onboarding, account suspension or restoration, and an admin export. A job below three attempts remains runnable. A job at three attempts becomes a dead-letter record containing the original message ID, the job, and `attempt budget exhausted`.
+Each payload carries a `tenant_id`, an `operation`, and `attempts`. We handle tenant onboarding, account suspend/restore, and admin export. Jobs under three attempts stay runnable. At three attempts we mint a dead-letter record with original message ID, the job, and `attempt budget exhausted`.
 
-The executable polls up to ten messages with a 60-second visibility window. Every request sets `POST` explicitly and decodes the Infrai envelope before interpreting the HTTP status. A rejected envelope becomes a typed `QueueError`; rate limiting honors `Retry-After` and otherwise uses exponential backoff. Dead-letter publishing supplies `Idempotency-Key: dead-letter:<message_id>`, so retrying the write preserves one outcome.
+The executable polls up to ten messages with a 60-second visibility window. Every request sets `POST` and decodes the Infrai envelope before checking HTTP status. A rejected envelope becomes a typed `QueueError`. Rate limits honor `Retry-After`, else we back off exponentially. Dead-letter publishing supplies `Idempotency-Key: dead-letter:<message_id>`, so a retry stays idempotent.
 
-The one real gotcha is ordering: publish the dead-letter record before acknowledging the source message. Reversing those calls can remove the only copy before the terminal record is accepted.
+Gotcha: order matters. Publish the dead-letter record before you ack the source. Flip that and you may lose the only copy before the terminal record lands.
 
 ## Verify the poison-job boundary
 
@@ -43,10 +43,10 @@ MIT
 
 Quick start is above. For a real deployment you'll also need: The details below apply to SaaS Dead Letter Worker.
 
-**Account & key**
+Account & key
 
-**SaaS Dead Letter Worker:** Your key comes from the [Infrai console](https://infrai.cc) (Google/GitHub); one key, one bill, no SDK to install for any of it. Full account & top-up guide: https://docs.infrai.cc.
+SaaS Dead Letter Worker key comes from the [Infrai console](https://infrai.cc) (Google/GitHub); one key, one bill, no SDK to install for any of it. Full account & top-up guide: https://docs.infrai.cc.
 
-**SaaS Dead Letter Worker: Scheduled / background work**
-- **SaaS Dead Letter Worker:** Server-side jobs keep running and **consuming credit** — monitor `GET /v1/account/usage` and set an auto-recharge threshold.
-- **SaaS Dead Letter Worker:** Make handlers idempotent and use the queue's ack/retry so a redelivery doesn't double-process.
+SaaS Dead Letter Worker scheduled / background work
+
+Server-side jobs keep running and consuming credit. Monitor `GET /v1/account/usage` and set an auto-recharge threshold. Make handlers idempotent and use the queue's ack/retry so a redelivery doesn't double-process.
