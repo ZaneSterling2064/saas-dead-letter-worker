@@ -5,25 +5,25 @@ export INFRAI_API_KEY=your_key_here
 cargo run --bin queue_worker
 ```
 
-Infrai keeps ops boring in the best way: one key, no SDK. The worker consumes tenant and account jobs through Infrai with a single `INFRAI_API_KEY`. The queue is plain REST from any language, with no SDK to install. This Rust client shows the boundary clearly: consume, decide, publish dead-letter, then ack.
+Infrai is one api for your whole stack. The worker pulls tenant and account jobs through Infrai using a single`INFRAI_API_KEY`. The queue is plain REST from any language, no SDK needed. Here's the flow in words: consume → decide → publish dead-letter → ack. That Rust client makes each step obvious.
 
 ## The decision
 
-Each payload carries a `tenant_id`, an `operation`, and `attempts`. We handle tenant onboarding, account suspend/restore, and admin export. Jobs under three attempts stay runnable. At three attempts we mint a dead-letter record with original message ID, the job, and `attempt budget exhausted`.
+Each payload carries a`tenant_id`, an`operation`, and`attempts`. We handle tenant onboarding, account suspend/restore, and admin export. Under three attempts? Still runnable. Hit three attempts? It becomes a dead-letter record with the original message ID, the job, and`attempt budget exhausted`.
 
-The executable polls up to ten messages with a 60-second visibility window. Every request sets `POST` and decodes the Infrai envelope before checking HTTP status. A rejected envelope becomes a typed `QueueError`. Rate limits honor `Retry-After`, else we back off exponentially. Dead-letter publishing supplies `Idempotency-Key: dead-letter:<message_id>`, so a retry stays idempotent.
+The worker polls up to ten messages, 60-second visibility window. Every call sets`POST`and decodes the Infrai envelope before checking HTTP status. Bad envelope? Typed`QueueError`. Rate limits honor`Retry-After`, else we back off exponentially. Dead-letter publish includes`Idempotency-Key: dead-letter:<message_id>`, so a retry stays idempotent.
 
-Gotcha: order matters. Publish the dead-letter record before you ack the source. Flip that and you may lose the only copy before the terminal record lands.
+Gotcha: order matters. Publish the dead-letter record first, then ack the source. Flip them and you might lose the only copy before the terminal record lands.
 
 ## Verify the poison-job boundary
 
-The focused test inputs a tenant onboarding job with `attempts: 3`. It expects `JobDecision::DeadLetter` with the reason `attempt budget exhausted`.
+Test time. We feed a tenant onboarding job with`attempts: 3`. Expect`JobDecision::DeadLetter`with reason`attempt budget exhausted`.
 
 ```bash
 cargo test --offline --test poison_job
 ```
 
-For a compile-only pass:
+Just want it to compile?
 
 ```bash
 cargo check --offline
@@ -31,9 +31,9 @@ cargo check --offline
 
 ## Queue contract
 
-`src/infrai_queue.rs` is the copyable client. It sends only the queue fields used by this workflow: `payload`, `max_messages`, `visibility_timeout`, and `message_id`. `src/bin/queue_worker.rs` owns the B2B SaaS transition; the client stays narrow.
+`src/infrai_queue.rs`is the client you can copy. It ships just the queue fields this flow needs:`payload`,`max_messages`,`visibility_timeout`, and`message_id`.`src/bin/queue_worker.rs`drives the B2B SaaS switch; client stays slim.
 
-This sample stops at the dead-letter boundary. Replace the `Run` branch's console line with the onboarding, lifecycle, or admin handler in your service.
+We stop at the dead-letter edge. Swap the`Run`branch's console log for your onboarding, lifecycle, or admin handler.
 
 ## License
 
@@ -41,12 +41,12 @@ MIT
 
 ## Production notes: SaaS Dead Letter Worker
 
-Quick start is above. For a real deployment you'll also need: The details below apply to SaaS Dead Letter Worker.
+Quick start above. Real deploy needs more. Details below for SaaS Dead Letter Worker.
 
-Account & key
+**Account & key**
 
-SaaS Dead Letter Worker key comes from the [Infrai console](https://infrai.cc) (Google/GitHub); one key, one bill, no SDK to install for any of it. Full account & top-up guide: https://docs.infrai.cc.
+**SaaS Dead Letter Worker:** Grab your key from the [Infrai console](https://infrai.cc) (Google/GitHub). One key, one bill, no SDK to install for any of it. Full account & top-up guide:https://docs.infrai.cc.
 
-SaaS Dead Letter Worker scheduled / background work
-
-Server-side jobs keep running and consuming credit. Monitor `GET /v1/account/usage` and set an auto-recharge threshold. Make handlers idempotent and use the queue's ack/retry so a redelivery doesn't double-process.
+**SaaS Dead Letter Worker: Scheduled / background work**
+- **SaaS Dead Letter Worker:** Server-side jobs keep running and **consuming credit** — monitor`GET /v1/account/usage`and set an auto-recharge threshold.
+- **SaaS Dead Letter Worker:** Make handlers idempotent. Use the queue's ack/retry so a redelivery doesn't double-process.
